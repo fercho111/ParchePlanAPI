@@ -18,22 +18,26 @@ public class ApplicationDbContext : IdentityDbContext<User>
     public DbSet<PlanOption> PlanOptions { get; set; }
     public DbSet<Vote> Votes { get; set; }
     public DbSet<Attendance> Attendances { get; set; }
-    
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-
-        modelBuilder.Entity<PlanOption>()
-            .HasOne(po => po.Plan)
+        modelBuilder.Entity<Attendance>()
+            .HasOne(a => a.User)
             .WithMany()
-            .HasForeignKey(po => po.PlanId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .HasForeignKey(a => a.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
 
-        modelBuilder.Entity<Plan>()
-            .HasOne(p => p.WinningOption)
+        modelBuilder.Entity<Attendance>()
+            .HasOne(a => a.Plan)
             .WithMany()
-            .HasForeignKey(p => p.WinningOptionId)
+            .HasForeignKey(a => a.PlanId)
+            .OnDelete(DeleteBehavior.NoAction);
+        
+        modelBuilder.Entity<Vote>()
+            .HasOne(v => v.Option)
+            .WithMany()
+            .HasForeignKey(v => v.OptionId)
             .OnDelete(DeleteBehavior.NoAction);
     }
-    
 }

@@ -27,8 +27,4 @@ public class Plan
     public DateTime VotingDeadline { get; set; }
     public DateTime CheckInStart { get; set; }
     public DateTime CheckInEnd { get; set; }
-
-    public Guid? WinningOptionId { get; set; }
-    [ForeignKey("WinningOptionId")]
-    public PlanOption? WinningOption { get; set; }
 }

@@ -8,12 +8,7 @@ public class Vote
     [Key]
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public Guid IdVote { get; set; }
-
-    [Required]
-    public Guid PlanId { get; set; }
-    [ForeignKey("PlanId")]
-    public Plan? Plan { get; set; }
-
+    
     [Required]
     public string UserId { get; set; } = string.Empty;
     [ForeignKey("UserId")]
