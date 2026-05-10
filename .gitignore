@@ -1,0 +1,87 @@
+# =========================
+# Build output
+# =========================
+bin/
+obj/
+out/
+
+# =========================
+# Rider
+# =========================
+.idea/
+*.sln.iml
+
+# =========================
+# Visual Studio
+# =========================
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# =========================
+# ReSharper
+# =========================
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# =========================
+# .NET / ASP.NET
+# =========================
+*.cache
+*.pdb
+*.mdb
+*.log
+*.tmp
+*.temp
+
+# NuGet
+packages/
+!packages/build/
+*.nupkg
+*.snupkg
+
+# =========================
+# ASP.NET Core
+# =========================
+appsettings.Development.json
+secrets.json
+
+# =========================
+# Test results
+# =========================
+TestResults/
+coverage/
+coverage-report/
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Node (if frontend exists)
+# =========================
+node_modules/
+dist/
+
+# =========================
+# Docker
+# =========================
+docker-compose.override.yml
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+
+# =========================
+# SQLite / local DBs
+# =========================
+*.db
+*.sqlite
+*.sqlite3
