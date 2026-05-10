@@ -6,7 +6,8 @@ namespace ParchePlanAPI.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-// test pwd: 45ngOw0u.3
+// tests email: alberto@uni.edu pwd: 45ngOw0u.3
+// email: eusebio@uni.edu pwd: 24H0wkn.@
 public class AuthController : Controller
 {
     // GET
