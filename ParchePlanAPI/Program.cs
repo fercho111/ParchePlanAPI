@@ -25,6 +25,7 @@ builder.Services.AddIdentity<User, IdentityRole>(options => {
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IParcheService, ParcheService>();
+builder.Services.AddScoped<IPlanService, PlanService>();
 
 builder.Services.AddAuthentication(options =>
 {

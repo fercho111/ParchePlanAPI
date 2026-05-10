@@ -16,10 +16,12 @@ namespace ParchePlanAPI.Controllers;
 public class ParcheController : Controller
 {
     private readonly IParcheService _parcheService;
+    private readonly IPlanService _planService;
 
-    public ParcheController(IParcheService parcheService)
+    public ParcheController(IParcheService parcheService, IPlanService planService)
     {
         _parcheService = parcheService;
+        _planService = planService;
     }
 
     /// <summary>
@@ -206,5 +208,29 @@ public class ParcheController : Controller
         }
 
         return Ok(parche);
+    }
+
+    /// <summary>
+    /// GET /api/parches/{parcheId}/plans
+    /// Returns all plans for a parche. Caller must be a member.
+    /// </summary>
+    [HttpGet("{parcheId}/plans")]
+    public async Task<IActionResult> GetPlans(Guid parcheId)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (userId == null)
+        {
+            return Unauthorized(new { message = "User not found in token." });
+        }
+
+        var (plans, error) = await _planService.GetPlansForParche(userId, parcheId);
+
+        if (error != null)
+        {
+            return StatusCode(403, new { message = error });
+        }
+
+        return Ok(plans);
     }
 }
