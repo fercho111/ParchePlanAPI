@@ -238,7 +238,6 @@ public class ParcheService : IParcheService
         return (true, null);
     }
 
-    // <summary>
     // PATCH - Update a parche's info.
     // Only the Owner can edit the parche.
     // Updates name, description, and cover image URL.
@@ -315,5 +314,59 @@ public class ParcheService : IParcheService
         }
 
         return new string(code);
+    }
+
+    public async Task<(List<MemberRankingDTO>? Rankings, string? Error)> GetRankings(string userId, Guid parcheId)
+    {
+        var isMember = await _context.ParcheMembers
+            .AnyAsync(pm => pm.ParcheId == parcheId && pm.UserId == userId);
+
+        if (!isMember)
+        {
+            return (null, "You are not a member of this parche.");
+        }
+
+        var members = await _context.ParcheMembers
+            .Where(pm => pm.ParcheId == parcheId)
+            .Include(pm => pm.User)
+            .ToListAsync();
+
+        // Plans in this parche that reached Scheduled state
+        var scheduledPlans = await _context.Plans
+            .Where(p => p.ParcheId == parcheId && p.State == PlanStateEnum.Scheduled)
+            .ToListAsync();
+
+        var scheduledPlanIds = scheduledPlans.Select(p => p.IdPlan).ToList();
+
+        // Attendances for scheduled plans: status Yes but didn't check in
+        var ghostAttendances = await _context.Attendances
+            .Where(a => scheduledPlanIds.Contains(a.PlanId)
+                && a.Status == AttendanceStatusEnum.Yes
+                && !a.CheckedIn)
+            .ToListAsync();
+
+        var rankings = new List<MemberRankingDTO>();
+
+        foreach (var member in members)
+        {
+            // OrganizerScore: how many plans this user created that reached Scheduled
+            var organizerScore = scheduledPlans
+                .Count(p => p.CreatedBy == member.UserId);
+
+            // GhostScore: how many times they said Yes but didn't check in
+            var ghostScore = ghostAttendances
+                .Count(a => a.UserId == member.UserId);
+
+            rankings.Add(new MemberRankingDTO
+            {
+                UserId = member.UserId,
+                FullName = member.User != null ? member.User.FullName : "",
+                Email = member.User != null ? member.User.Email : "",
+                OrganizerScore = organizerScore,
+                GhostScore = ghostScore
+            });
+        }
+
+        return (rankings, null);
     }
 }

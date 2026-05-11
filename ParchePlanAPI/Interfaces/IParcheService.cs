@@ -9,4 +9,5 @@ public interface IParcheService
     Task<(ParcheResponseDTO? Parche, string? Error)> JoinParche(string userId, JoinParcheDTO dto);
     Task<(bool Success, string? Error)> UpdateMemberRole(string callerId, Guid parcheId, string targetUserId, UpdateMemberRoleDTO dto);
     Task<(ParcheResponseDTO? Parche, string? Error)> UpdateParche(string callerId, Guid parcheId, UpdateParcheDTO dto);
+    Task<(List<MemberRankingDTO>? Rankings, string? Error)> GetRankings(string userId, Guid parcheId);
 }

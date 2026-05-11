@@ -233,4 +233,24 @@ public class ParcheController : Controller
 
         return Ok(plans);
     }
+
+    [HttpGet("{parcheId}/rankings")]
+    public async Task<IActionResult> GetRankings(Guid parcheId)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (userId == null)
+        {
+            return Unauthorized(new { message = "User not found in token." });
+        }
+
+        var (rankings, error) = await _parcheService.GetRankings(userId, parcheId);
+
+        if (error != null)
+        {
+            return StatusCode(403, new { message = error });
+        }
+
+        return Ok(rankings);
+    }
 }

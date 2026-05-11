@@ -249,6 +249,14 @@ public class PlanService : IPlanService
             return (false, "Option does not exist for this plan.");
         }
 
+        var attendance = await _context.Attendances
+            .FirstOrDefaultAsync(a => a.PlanId == planId && a.UserId == userId);
+
+        if (attendance == null || attendance.Status == AttendanceStatusEnum.No)
+        {
+            return (false, "You must have attendance status of Yes or Maybe to vote.");
+        }
+
         // Upsert: one vote per user per plan
         // Find any existing vote by this user on any option of this plan
         var existingVote = await _context.Votes
