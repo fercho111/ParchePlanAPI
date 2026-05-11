@@ -238,7 +238,6 @@ public class ParcheService : IParcheService
         return (true, null);
     }
 
-    // <summary>
     // PATCH - Update a parche's info.
     // Only the Owner can edit the parche.
     // Updates name, description, and cover image URL.
