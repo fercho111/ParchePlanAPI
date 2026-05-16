@@ -27,7 +27,7 @@ public class ParcheService : IParcheService
             .Select(pm => pm.ParcheId)
             .ToListAsync();
 
-        // Step 2: For each parche, load the parche data and its members
+        // Step 2: Load those parches
         var parches = await _context.Parches
             .Where(p => parcheIds.Contains(p.IdParche))
             .ToListAsync();
@@ -43,16 +43,9 @@ public class ParcheService : IParcheService
 
         foreach (var parche in parches)
         {
-            // Get the members that belong to this specific parche
             var membersForThisParche = allMembers
                 .Where(pm => pm.ParcheId == parche.IdParche)
-                .Select(pm => new ParcheMemberResponseDTO
-                {
-                    UserId = pm.UserId,
-                    FullName = pm.User != null ? pm.User.FullName : "",
-                    Email = pm.User != null ? pm.User.Email : "",
-                    Role = pm.Role.ToString()
-                })
+                .Select(MapMemberToResponseDTO)
                 .ToList();
 
             result.Add(new ParcheResponseDTO
@@ -68,13 +61,15 @@ public class ParcheService : IParcheService
 
         return result;
     }
-    
+
     // POST - Create a new Parche.
     // Validates input, generates a unique invite code, saves the parche,
     // and adds the caller as the Owner.
-    public async Task<(ParcheResponseDTO? Parche, string? Error)> CreateParche(string userId, CreateParcheDTO dto)
+    public async Task<(ParcheResponseDTO? Parche, string? Error)> CreateParche(
+        string userId,
+        CreateParcheDTO dto
+    )
     {
-        // Step 1: Create the Parche entity with an auto-generated invite code
         var parche = new Parche
         {
             Name = dto.Name,
@@ -83,11 +78,9 @@ public class ParcheService : IParcheService
             InviteCode = GenerateInviteCode()
         };
 
-        // Step 2: Save the parche to the database
         _context.Parches.Add(parche);
         await _context.SaveChangesAsync();
 
-        // Step 3: Add the caller as the Owner of this new parche
         var ownerMember = new ParcheMember
         {
             ParcheId = parche.IdParche,
@@ -98,10 +91,11 @@ public class ParcheService : IParcheService
         _context.ParcheMembers.Add(ownerMember);
         await _context.SaveChangesAsync();
 
-        // Step 4: Load the user info so we can return it in the response
-        var user = await _context.Users.FindAsync(userId);
+        var memberWithUser = await _context.ParcheMembers
+            .Where(pm => pm.ParcheId == parche.IdParche && pm.UserId == userId)
+            .Include(pm => pm.User)
+            .FirstOrDefaultAsync();
 
-        // Step 5: Build and return the response DTO
         var response = new ParcheResponseDTO
         {
             IdParche = parche.IdParche,
@@ -109,16 +103,22 @@ public class ParcheService : IParcheService
             Description = parche.Description,
             CoverImageUrl = parche.CoverImageUrl,
             InviteCode = parche.InviteCode,
-            Members = new List<ParcheMemberResponseDTO>
-            {
-                new ParcheMemberResponseDTO
+            Members = memberWithUser != null
+                ? new List<ParcheMemberResponseDTO>
                 {
-                    UserId = userId,
-                    FullName = user != null ? user.FullName : "",
-                    Email = user != null ? user.Email : "",
-                    Role = ParcheRoleEnum.Owner.ToString()
+                    MapMemberToResponseDTO(memberWithUser)
                 }
-            }
+                : new List<ParcheMemberResponseDTO>
+                {
+                    new ParcheMemberResponseDTO
+                    {
+                        UserId = userId,
+                        FullName = string.Empty,
+                        Email = string.Empty,
+                        AvatarUrl = null,
+                        Role = ParcheRoleEnum.Owner.ToString()
+                    }
+                }
         };
 
         return (response, null);
@@ -127,18 +127,21 @@ public class ParcheService : IParcheService
     // POST - Join a parche using an invite code.
     // Finds the parche by code, checks the user isn't already a member,
     // and adds them with the Member role.
-    public async Task<(ParcheResponseDTO? Parche, string? Error)> JoinParche(string userId, JoinParcheDTO dto)
+    public async Task<(ParcheResponseDTO? Parche, string? Error)> JoinParche(
+        string userId,
+        JoinParcheDTO dto
+    )
     {
-        // Step 1: Find the parche by invite code
+        var inviteCode = dto.InviteCode.Trim();
+
         var parche = await _context.Parches
-            .FirstOrDefaultAsync(p => p.InviteCode == dto.InviteCode);
+            .FirstOrDefaultAsync(p => p.InviteCode.ToLower() == inviteCode.ToLower());
 
         if (parche == null)
         {
             return (null, "Invalid invite code. No parche found.");
         }
 
-        // Step 2: Check if the user is already a member of this parche
         var existingMember = await _context.ParcheMembers
             .FirstOrDefaultAsync(pm => pm.ParcheId == parche.IdParche && pm.UserId == userId);
 
@@ -147,7 +150,6 @@ public class ParcheService : IParcheService
             return (null, "You are already a member of this parche.");
         }
 
-        // Step 3: Add the user as a Member
         var newMember = new ParcheMember
         {
             ParcheId = parche.IdParche,
@@ -158,13 +160,11 @@ public class ParcheService : IParcheService
         _context.ParcheMembers.Add(newMember);
         await _context.SaveChangesAsync();
 
-        // Step 4: Load all members for the response (including the new one)
         var allMembers = await _context.ParcheMembers
             .Where(pm => pm.ParcheId == parche.IdParche)
             .Include(pm => pm.User)
             .ToListAsync();
 
-        // Step 5: Build the response
         var response = new ParcheResponseDTO
         {
             IdParche = parche.IdParche,
@@ -172,24 +172,22 @@ public class ParcheService : IParcheService
             Description = parche.Description,
             CoverImageUrl = parche.CoverImageUrl,
             InviteCode = parche.InviteCode,
-            Members = allMembers.Select(pm => new ParcheMemberResponseDTO
-            {
-                UserId = pm.UserId,
-                FullName = pm.User != null ? pm.User.FullName : "",
-                Email = pm.User != null ? pm.User.Email : "",
-                Role = pm.Role.ToString()
-            }).ToList()
+            Members = allMembers.Select(MapMemberToResponseDTO).ToList()
         };
 
         return (response, null);
     }
-    
+
     // PATCH - Update a member's role in a parche.
     // Validates: caller is Owner, target member exists, target isn't Owner,
     // and the new role is valid (Moderator or Member).
-    public async Task<(bool Success, string? Error)> UpdateMemberRole(string callerId, Guid parcheId, string targetUserId, UpdateMemberRoleDTO dto)
+    public async Task<(bool Success, string? Error)> UpdateMemberRole(
+        string callerId,
+        Guid parcheId,
+        string targetUserId,
+        UpdateMemberRoleDTO dto
+    )
     {
-        // Step 1: Verify the caller is an Owner of this parche
         var callerMember = await _context.ParcheMembers
             .FirstOrDefaultAsync(pm => pm.ParcheId == parcheId && pm.UserId == callerId);
 
@@ -203,7 +201,6 @@ public class ParcheService : IParcheService
             return (false, "Only the Owner can change member roles.");
         }
 
-        // Step 2: Find the target member
         var targetMember = await _context.ParcheMembers
             .FirstOrDefaultAsync(pm => pm.ParcheId == parcheId && pm.UserId == targetUserId);
 
@@ -212,26 +209,21 @@ public class ParcheService : IParcheService
             return (false, "Target user is not a member of this parche.");
         }
 
-        // Step 3: Verify the target isn't an Owner (can't change an Owner's role)
         if (targetMember.Role == ParcheRoleEnum.Owner)
         {
             return (false, "Cannot change the role of an Owner.");
         }
 
-        // Step 4: Parse and validate the new role
-        // Only "Moderator" and "Member" are valid assignments
         if (!Enum.TryParse<ParcheRoleEnum>(dto.Role, ignoreCase: true, out var newRole))
         {
             return (false, "Invalid role. Valid roles are: Moderator, Member.");
         }
 
-        // Don't allow assigning Owner role through this endpoint
         if (newRole == ParcheRoleEnum.Owner)
         {
             return (false, "Cannot assign the Owner role.");
         }
 
-        // Step 5: Update the role and save
         targetMember.Role = newRole;
         await _context.SaveChangesAsync();
 
@@ -241,9 +233,12 @@ public class ParcheService : IParcheService
     // PATCH - Update a parche's info.
     // Only the Owner can edit the parche.
     // Updates name, description, and cover image URL.
-    public async Task<(ParcheResponseDTO? Parche, string? Error)> UpdateParche(string callerId, Guid parcheId, UpdateParcheDTO dto)
+    public async Task<(ParcheResponseDTO? Parche, string? Error)> UpdateParche(
+        string callerId,
+        Guid parcheId,
+        UpdateParcheDTO dto
+    )
     {
-        // Step 1: Check that the parche exists
         var parche = await _context.Parches.FindAsync(parcheId);
 
         if (parche == null)
@@ -251,7 +246,6 @@ public class ParcheService : IParcheService
             return (null, "Parche not found.");
         }
 
-        // Step 2: Verify the caller is the Owner of this parche
         var callerMember = await _context.ParcheMembers
             .FirstOrDefaultAsync(pm => pm.ParcheId == parcheId && pm.UserId == callerId);
 
@@ -265,21 +259,17 @@ public class ParcheService : IParcheService
             return (null, "Only the Owner can edit the parche.");
         }
 
-        // Step 3: Update the parche fields
         parche.Name = dto.Name;
         parche.Description = dto.Description;
         parche.CoverImageUrl = dto.CoverImageUrl;
 
-        // Step 4: Save changes
         await _context.SaveChangesAsync();
 
-        // Step 5: Load all members for the response
         var allMembers = await _context.ParcheMembers
             .Where(pm => pm.ParcheId == parcheId)
             .Include(pm => pm.User)
             .ToListAsync();
 
-        // Step 6: Build and return the response
         var response = new ParcheResponseDTO
         {
             IdParche = parche.IdParche,
@@ -287,36 +277,16 @@ public class ParcheService : IParcheService
             Description = parche.Description,
             CoverImageUrl = parche.CoverImageUrl,
             InviteCode = parche.InviteCode,
-            Members = allMembers.Select(pm => new ParcheMemberResponseDTO
-            {
-                UserId = pm.UserId,
-                FullName = pm.User != null ? pm.User.FullName : "",
-                Email = pm.User != null ? pm.User.Email : "",
-                Role = pm.Role.ToString()
-            }).ToList()
+            Members = allMembers.Select(MapMemberToResponseDTO).ToList()
         };
 
         return (response, null);
     }
 
-    // Generates a random 8-character alphanumeric invite code.
-    // Simple and readable for sharing.
-    private string GenerateInviteCode()
-    {
-        // Use a mix of uppercase letters and digits for readability
-        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        var random = new Random();
-        var code = new char[8];
-
-        for (int i = 0; i < 8; i++)
-        {
-            code[i] = chars[random.Next(chars.Length)];
-        }
-
-        return new string(code);
-    }
-
-    public async Task<(List<MemberRankingDTO>? Rankings, string? Error)> GetRankings(string userId, Guid parcheId)
+    public async Task<(List<MemberRankingDTO>? Rankings, string? Error)> GetRankings(
+        string userId,
+        Guid parcheId
+    )
     {
         var isMember = await _context.ParcheMembers
             .AnyAsync(pm => pm.ParcheId == parcheId && pm.UserId == userId);
@@ -331,42 +301,69 @@ public class ParcheService : IParcheService
             .Include(pm => pm.User)
             .ToListAsync();
 
-        // Plans in this parche that reached Scheduled state
         var scheduledPlans = await _context.Plans
             .Where(p => p.ParcheId == parcheId && p.State == PlanStateEnum.Scheduled)
             .ToListAsync();
 
-        var scheduledPlanIds = scheduledPlans.Select(p => p.IdPlan).ToList();
+        var scheduledPlanIds = scheduledPlans
+            .Select(p => p.IdPlan)
+            .ToList();
 
-        // Attendances for scheduled plans: status Yes but didn't check in
         var ghostAttendances = await _context.Attendances
-            .Where(a => scheduledPlanIds.Contains(a.PlanId)
-                && a.Status == AttendanceStatusEnum.Yes
-                && !a.CheckedIn)
+            .Where(a =>
+                scheduledPlanIds.Contains(a.PlanId) &&
+                a.Status == AttendanceStatusEnum.Yes &&
+                !a.CheckedIn
+            )
             .ToListAsync();
 
         var rankings = new List<MemberRankingDTO>();
 
         foreach (var member in members)
         {
-            // OrganizerScore: how many plans this user created that reached Scheduled
             var organizerScore = scheduledPlans
                 .Count(p => p.CreatedBy == member.UserId);
 
-            // GhostScore: how many times they said Yes but didn't check in
             var ghostScore = ghostAttendances
                 .Count(a => a.UserId == member.UserId);
 
             rankings.Add(new MemberRankingDTO
             {
                 UserId = member.UserId,
-                FullName = member.User != null ? member.User.FullName : "",
-                Email = member.User != null ? member.User.Email : "",
+                FullName = member.User != null ? member.User.FullName : string.Empty,
+                Email = member.User != null ? member.User.Email : string.Empty,
                 OrganizerScore = organizerScore,
                 GhostScore = ghostScore
             });
         }
 
         return (rankings, null);
+    }
+
+    // Generates a random 8-character alphanumeric invite code.
+    private string GenerateInviteCode()
+    {
+        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        var random = new Random();
+        var code = new char[8];
+
+        for (var i = 0; i < code.Length; i++)
+        {
+            code[i] = chars[random.Next(chars.Length)];
+        }
+
+        return new string(code);
+    }
+
+    private static ParcheMemberResponseDTO MapMemberToResponseDTO(ParcheMember member)
+    {
+        return new ParcheMemberResponseDTO
+        {
+            UserId = member.UserId,
+            FullName = member.User != null ? member.User.FullName : string.Empty,
+            Email = member.User != null ? member.User.Email : string.Empty,
+            AvatarUrl = member.User != null ? member.User.AvatarUrl : null,
+            Role = member.Role.ToString()
+        };
     }
 }
