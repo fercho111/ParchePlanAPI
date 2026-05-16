@@ -15,7 +15,10 @@ public class PlanService : IPlanService
         _context = context;
     }
 
-    public async Task<(List<PlanResponseDTO>? Plans, string? Error)> GetPlansForParche(string userId, Guid parcheId)
+    public async Task<(List<PlanResponseDTO>? Plans, string? Error)> GetPlansForParche(
+        string userId,
+        Guid parcheId
+    )
     {
         var isMember = await _context.ParcheMembers
             .AnyAsync(pm => pm.ParcheId == parcheId && pm.UserId == userId);
@@ -27,26 +30,23 @@ public class PlanService : IPlanService
 
         var plans = await _context.Plans
             .Where(p => p.ParcheId == parcheId)
-            .Select(p => new PlanResponseDTO
-            {
-                IdPlan = p.IdPlan,
-                ParcheId = p.ParcheId,
-                CreatedBy = p.CreatedBy,
-                Title = p.Title,
-                Description = p.Description,
-                DateStart = p.DateStart,
-                DateEnd = p.DateEnd,
-                State = p.State.ToString(),
-                VotingDeadline = p.VotingDeadline,
-                CheckInStart = p.CheckInStart,
-                CheckInEnd = p.CheckInEnd
-            })
+            .OrderByDescending(p => p.DateStart)
             .ToListAsync();
 
-        return (plans, null);
+        var response = new List<PlanResponseDTO>();
+
+        foreach (var plan in plans)
+        {
+            response.Add(await MapPlanToResponseDTO(plan, userId));
+        }
+
+        return (response, null);
     }
 
-    public async Task<(PlanResponseDTO? Plan, string? Error)> CreatePlan(string userId, CreatePlanDTO dto)
+    public async Task<(PlanResponseDTO? Plan, string? Error)> CreatePlan(
+        string userId,
+        CreatePlanDTO dto
+    )
     {
         var isMember = await _context.ParcheMembers
             .AnyAsync(pm => pm.ParcheId == dto.ParcheId && pm.UserId == userId);
@@ -61,9 +61,9 @@ public class PlanService : IPlanService
             return (null, "DateEnd must be greater than or equal to DateStart.");
         }
 
-        if (dto.VotingDeadline < dto.DateStart || dto.VotingDeadline > dto.DateEnd)
+        if (dto.VotingDeadline >= dto.DateStart)
         {
-            return (null, "VotingDeadline must be between DateStart and DateEnd.");
+            return (null, "VotingDeadline must be before DateStart.");
         }
 
         if (dto.Options == null || dto.Options.Count < 3)
@@ -73,7 +73,10 @@ public class PlanService : IPlanService
 
         foreach (var option in dto.Options)
         {
-            if (string.IsNullOrWhiteSpace(option.Place) || string.IsNullOrWhiteSpace(option.Time))
+            if (
+                string.IsNullOrWhiteSpace(option.Place) ||
+                string.IsNullOrWhiteSpace(option.Time)
+            )
             {
                 return (null, "Each option must have a place and time.");
             }
@@ -99,38 +102,25 @@ public class PlanService : IPlanService
         _context.Plans.Add(plan);
         await _context.SaveChangesAsync();
 
-        foreach (var optionDto in dto.Options)
+        var createdOptions = dto.Options.Select(optionDto => new PlanOption
         {
-            var planOption = new PlanOption
-            {
-                PlanId = plan.IdPlan,
-                Place = optionDto.Place,
-                Time = optionDto.Time
-            };
-            _context.PlanOptions.Add(planOption);
-        }
+            PlanId = plan.IdPlan,
+            Place = optionDto.Place,
+            Time = optionDto.Time
+        }).ToList();
 
+        _context.PlanOptions.AddRange(createdOptions);
         await _context.SaveChangesAsync();
 
-        var response = new PlanResponseDTO
-        {
-            IdPlan = plan.IdPlan,
-            ParcheId = plan.ParcheId,
-            CreatedBy = plan.CreatedBy,
-            Title = plan.Title,
-            Description = plan.Description,
-            DateStart = plan.DateStart,
-            DateEnd = plan.DateEnd,
-            State = plan.State.ToString(),
-            VotingDeadline = plan.VotingDeadline,
-            CheckInStart = plan.CheckInStart,
-            CheckInEnd = plan.CheckInEnd
-        };
+        var response = await MapPlanToResponseDTO(plan, userId);
 
         return (response, null);
     }
 
-    public async Task<(PlanResponseDTO? Plan, string? Error)> AdvanceState(string userId, Guid planId)
+    public async Task<(PlanResponseDTO? Plan, string? Error)> AdvanceState(
+        string userId,
+        Guid planId
+    )
     {
         var plan = await _context.Plans.FindAsync(planId);
 
@@ -140,14 +130,20 @@ public class PlanService : IPlanService
         }
 
         var callerMember = await _context.ParcheMembers
-            .FirstOrDefaultAsync(pm => pm.ParcheId == plan.ParcheId && pm.UserId == userId);
+            .FirstOrDefaultAsync(pm =>
+                pm.ParcheId == plan.ParcheId &&
+                pm.UserId == userId
+            );
 
         if (callerMember == null)
         {
             return (null, "You are not a member of this parche.");
         }
 
-        if (callerMember.Role != ParcheRoleEnum.Owner && callerMember.Role != ParcheRoleEnum.Moderator)
+        if (
+            callerMember.Role != ParcheRoleEnum.Owner &&
+            callerMember.Role != ParcheRoleEnum.Moderator
+        )
         {
             return (null, "Only Owner or Moderator can advance the plan state.");
         }
@@ -160,7 +156,6 @@ public class PlanService : IPlanService
 
             case PlanStateEnum.VotingOpen:
                 plan.State = PlanStateEnum.VotingClosed;
-                await TallyVotesAndSetWinner(plan);
                 break;
 
             case PlanStateEnum.VotingClosed:
@@ -176,7 +171,68 @@ public class PlanService : IPlanService
 
         await _context.SaveChangesAsync();
 
-        var response = new PlanResponseDTO
+        var response = await MapPlanToResponseDTO(plan, userId);
+
+        return (response, null);
+    }
+
+    private async Task<PlanResponseDTO> MapPlanToResponseDTO(
+        Plan plan,
+        string userId
+    )
+    {
+        var options = await _context.PlanOptions
+            .Where(option => option.PlanId == plan.IdPlan)
+            .ToListAsync();
+
+        var orderedOptions = options
+            .OrderBy(option => ParseOptionTime(option.Time))
+            .ThenBy(option => option.IdPlanOption)
+            .ToList();
+
+        var attendanceList = await _context.Attendances
+            .Where(attendance => attendance.PlanId == plan.IdPlan)
+            .Include(attendance => attendance.User)
+            .ToListAsync();
+
+        var optionIds = options
+            .Select(option => option.IdPlanOption)
+            .ToList();
+
+        var voteCounts = await _context.Votes
+            .Where(vote => optionIds.Contains(vote.OptionId))
+            .GroupBy(vote => vote.OptionId)
+            .Select(group => new
+            {
+                OptionId = group.Key,
+                Count = group.Count()
+            })
+            .ToDictionaryAsync(
+                item => item.OptionId,
+                item => item.Count
+            );
+
+        var currentUserVoteOptionId = await _context.Votes
+            .Where(vote =>
+                vote.UserId == userId &&
+                optionIds.Contains(vote.OptionId)
+            )
+            .Select(vote => (Guid?)vote.OptionId)
+            .FirstOrDefaultAsync();
+
+        var currentUserAttendance = await _context.Attendances
+            .FirstOrDefaultAsync(attendance =>
+                attendance.PlanId == plan.IdPlan &&
+                attendance.UserId == userId
+            );
+
+        var winningOptionId =
+            plan.State == PlanStateEnum.VotingClosed ||
+            plan.State == PlanStateEnum.Scheduled
+                ? GetWinningOptionId(orderedOptions, voteCounts)
+                : null;
+
+        return new PlanResponseDTO
         {
             IdPlan = plan.IdPlan,
             ParcheId = plan.ParcheId,
@@ -188,46 +244,79 @@ public class PlanService : IPlanService
             State = plan.State.ToString(),
             VotingDeadline = plan.VotingDeadline,
             CheckInStart = plan.CheckInStart,
-            CheckInEnd = plan.CheckInEnd
+            CheckInEnd = plan.CheckInEnd,
+            WinningOptionId = winningOptionId,
+
+            Options = orderedOptions.Select(option => new PlanOptionResponseDTO
+            {
+                IdOption = option.IdPlanOption,
+                Place = option.Place,
+                Time = option.Time,
+                VoteCount = voteCounts.TryGetValue(option.IdPlanOption, out var count)
+                    ? count
+                    : 0
+            }).ToList(),
+
+            CurrentUserVoteOptionId = currentUserVoteOptionId,
+            CurrentUserAttendanceStatus = currentUserAttendance?.Status.ToString(),
+            CurrentUserCheckedIn = currentUserAttendance?.CheckedIn ?? false,
+
+            Attendance = attendanceList.Select(attendance => new PlanAttendanceResponseDTO
+            {
+                UserId = attendance.UserId,
+                FullName = attendance.User != null ? attendance.User.FullName : string.Empty,
+                Email = attendance.User != null ? attendance.User.Email : string.Empty,
+                AvatarUrl = attendance.User != null ? attendance.User.AvatarUrl : null,
+                Status = attendance.Status.ToString(),
+                CheckedIn = attendance.CheckedIn
+            }).ToList()
         };
-
-        return (response, null);
     }
-    
-    private async Task TallyVotesAndSetWinner(Plan plan)
-    {
-        var options = await _context.PlanOptions
-            .Where(o => o.PlanId == plan.IdPlan)
-            .ToListAsync();
 
-        if (options.Count == 0)
+    private static Guid? GetWinningOptionId(
+        List<PlanOption> orderedOptions,
+        Dictionary<Guid, int> voteCounts
+    )
+    {
+        if (orderedOptions.Count == 0)
         {
-            return;
+            return null;
         }
 
-        var voteCounts = await _context.Votes
-            .Where(v => options.Select(o => o.IdPlanOption).Contains(v.OptionId))
-            .GroupBy(v => v.OptionId)
-            .Select(g => new { OptionId = g.Key, Count = g.Count() })
-            .ToListAsync();
-        
-        PlanOption? winner = null;
-        int maxVotes = -1;
+        Guid? winningOptionId = null;
+        var maxVotes = -1;
 
-        foreach (var option in options.OrderBy(o => o.IdPlanOption))
+        foreach (var option in orderedOptions)
         {
-            var voteCount = voteCounts
-                .FirstOrDefault(vc => vc.OptionId == option.IdPlanOption)?.Count ?? 0;
+            var voteCount = voteCounts.TryGetValue(option.IdPlanOption, out var count)
+                ? count
+                : 0;
 
             if (voteCount > maxVotes)
             {
                 maxVotes = voteCount;
-                winner = option;
+                winningOptionId = option.IdPlanOption;
             }
         }
+
+        return winningOptionId;
     }
 
-    public async Task<(bool Success, string? Error)> CastVote(string userId, Guid planId, CastVoteDTO dto)
+    private static TimeSpan ParseOptionTime(string value)
+    {
+        if (TimeSpan.TryParse(value, out var time))
+        {
+            return time;
+        }
+
+        return TimeSpan.MaxValue;
+    }
+
+    public async Task<(bool Success, string? Error)> CastVote(
+        string userId,
+        Guid planId,
+        CastVoteDTO dto
+    )
     {
         var plan = await _context.Plans.FindAsync(planId);
 
@@ -242,7 +331,10 @@ public class PlanService : IPlanService
         }
 
         var optionExists = await _context.PlanOptions
-            .AnyAsync(o => o.IdPlanOption == dto.OptionId && o.PlanId == planId);
+            .AnyAsync(option =>
+                option.IdPlanOption == dto.OptionId &&
+                option.PlanId == planId
+            );
 
         if (!optionExists)
         {
@@ -250,40 +342,52 @@ public class PlanService : IPlanService
         }
 
         var attendance = await _context.Attendances
-            .FirstOrDefaultAsync(a => a.PlanId == planId && a.UserId == userId);
+            .FirstOrDefaultAsync(item =>
+                item.PlanId == planId &&
+                item.UserId == userId
+            );
 
         if (attendance == null || attendance.Status == AttendanceStatusEnum.No)
         {
             return (false, "You must have attendance status of Yes or Maybe to vote.");
         }
 
-        // Upsert: one vote per user per plan
-        // Find any existing vote by this user on any option of this plan
+        var planOptionIds = await _context.PlanOptions
+            .Where(option => option.PlanId == planId)
+            .Select(option => option.IdPlanOption)
+            .ToListAsync();
+
         var existingVote = await _context.Votes
-            .FirstOrDefaultAsync(v => v.UserId == userId &&
-                _context.PlanOptions.Where(o => o.PlanId == planId).Select(o => o.IdPlanOption).Contains(v.OptionId));
+            .FirstOrDefaultAsync(vote =>
+                vote.UserId == userId &&
+                planOptionIds.Contains(vote.OptionId)
+            );
 
         if (existingVote != null)
         {
-            // Update existing vote to the new option
             existingVote.OptionId = dto.OptionId;
         }
         else
         {
-            // Create new vote
             var vote = new Vote
             {
                 UserId = userId,
                 OptionId = dto.OptionId
             };
+
             _context.Votes.Add(vote);
         }
 
         await _context.SaveChangesAsync();
+
         return (true, null);
     }
 
-    public async Task<(bool Success, string? Error)> UpsertAttendance(string userId, Guid planId, UpsertAttendanceDTO dto)
+    public async Task<(bool Success, string? Error)> UpsertAttendance(
+        string userId,
+        Guid planId,
+        UpsertAttendanceDTO dto
+    )
     {
         var plan = await _context.Plans.FindAsync(planId);
 
@@ -292,21 +396,33 @@ public class PlanService : IPlanService
             return (false, "Plan not found.");
         }
 
-        if (!Enum.TryParse<AttendanceStatusEnum>(dto.Status, ignoreCase: true, out var status))
+        if (
+            !Enum.TryParse<AttendanceStatusEnum>(
+                dto.Status,
+                ignoreCase: true,
+                out var status
+            )
+        )
         {
             return (false, "Invalid status. Valid values are: Yes, No, Maybe.");
         }
 
         var existing = await _context.Attendances
-            .FirstOrDefaultAsync(a => a.PlanId == planId && a.UserId == userId);
+            .FirstOrDefaultAsync(attendance =>
+                attendance.PlanId == planId &&
+                attendance.UserId == userId
+            );
 
         if (existing != null)
         {
-            // If changing away from Yes, reset checkedIn
-            if (existing.Status == AttendanceStatusEnum.Yes && status != AttendanceStatusEnum.Yes)
+            if (
+                existing.Status == AttendanceStatusEnum.Yes &&
+                status != AttendanceStatusEnum.Yes
+            )
             {
                 existing.CheckedIn = false;
             }
+
             existing.Status = status;
         }
         else
@@ -318,14 +434,19 @@ public class PlanService : IPlanService
                 Status = status,
                 CheckedIn = false
             };
+
             _context.Attendances.Add(attendance);
         }
 
         await _context.SaveChangesAsync();
+
         return (true, null);
     }
 
-    public async Task<(bool Success, string? Error)> CheckIn(string userId, Guid planId)
+    public async Task<(bool Success, string? Error)> CheckIn(
+        string userId,
+        Guid planId
+    )
     {
         var plan = await _context.Plans.FindAsync(planId);
 
@@ -334,15 +455,18 @@ public class PlanService : IPlanService
             return (false, "Plan not found.");
         }
 
-        // Verify current time is within check-in window
         var now = DateTime.Now;
+
         if (now < plan.CheckInStart || now > plan.CheckInEnd)
         {
             return (false, "Check-in is not available at this time.");
         }
 
         var attendance = await _context.Attendances
-            .FirstOrDefaultAsync(a => a.PlanId == planId && a.UserId == userId);
+            .FirstOrDefaultAsync(item =>
+                item.PlanId == planId &&
+                item.UserId == userId
+            );
 
         if (attendance == null)
         {
@@ -360,7 +484,9 @@ public class PlanService : IPlanService
         }
 
         attendance.CheckedIn = true;
+
         await _context.SaveChangesAsync();
+
         return (true, null);
     }
 }
