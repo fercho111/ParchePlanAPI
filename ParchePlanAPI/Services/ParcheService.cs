@@ -51,7 +51,8 @@ public class ParcheService : IParcheService
                     UserId = pm.UserId,
                     FullName = pm.User != null ? pm.User.FullName : "",
                     Email = pm.User != null ? pm.User.Email : "",
-                    Role = pm.Role.ToString()
+                    Role = pm.Role.ToString(),
+                    AvatarUrl = pm.User != null ? pm.User.AvatarUrl : null
                 })
                 .ToList();
 
@@ -116,7 +117,8 @@ public class ParcheService : IParcheService
                     UserId = userId,
                     FullName = user != null ? user.FullName : "",
                     Email = user != null ? user.Email : "",
-                    Role = ParcheRoleEnum.Owner.ToString()
+                    Role = ParcheRoleEnum.Owner.ToString(),
+                    AvatarUrl = user != null ? user.AvatarUrl : null
                 }
             }
         };
@@ -177,7 +179,8 @@ public class ParcheService : IParcheService
                 UserId = pm.UserId,
                 FullName = pm.User != null ? pm.User.FullName : "",
                 Email = pm.User != null ? pm.User.Email : "",
-                Role = pm.Role.ToString()
+                Role = pm.Role.ToString(),
+                AvatarUrl = pm.User != null ? pm.User.AvatarUrl : null
             }).ToList()
         };
 
@@ -292,7 +295,8 @@ public class ParcheService : IParcheService
                 UserId = pm.UserId,
                 FullName = pm.User != null ? pm.User.FullName : "",
                 Email = pm.User != null ? pm.User.Email : "",
-                Role = pm.Role.ToString()
+                Role = pm.Role.ToString(),
+                AvatarUrl = pm.User != null ? pm.User.AvatarUrl : null
             }).ToList()
         };
 

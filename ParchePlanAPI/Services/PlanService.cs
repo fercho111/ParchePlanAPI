@@ -39,7 +39,15 @@ public class PlanService : IPlanService
                 State = p.State.ToString(),
                 VotingDeadline = p.VotingDeadline,
                 CheckInStart = p.CheckInStart,
-                CheckInEnd = p.CheckInEnd
+                CheckInEnd = p.CheckInEnd,
+                Options = _context.PlanOptions
+                    .Where(o => o.PlanId == p.IdPlan)
+                    .Select(o => new PlanOptionResponseDTO
+                    {
+                        IdPlanOption = o.IdPlanOption,
+                        Place = o.Place,
+                        Time = o.Time
+                    }).ToList()
             })
             .ToListAsync();
 
@@ -112,6 +120,15 @@ public class PlanService : IPlanService
 
         await _context.SaveChangesAsync();
 
+        var savedOptions = await _context.PlanOptions
+            .Where(o => o.PlanId == plan.IdPlan)
+            .Select(o => new PlanOptionResponseDTO
+            {
+                IdPlanOption = o.IdPlanOption,
+                Place = o.Place,
+                Time = o.Time
+            }).ToListAsync();
+
         var response = new PlanResponseDTO
         {
             IdPlan = plan.IdPlan,
@@ -124,7 +141,8 @@ public class PlanService : IPlanService
             State = plan.State.ToString(),
             VotingDeadline = plan.VotingDeadline,
             CheckInStart = plan.CheckInStart,
-            CheckInEnd = plan.CheckInEnd
+            CheckInEnd = plan.CheckInEnd,
+            Options = savedOptions
         };
 
         return (response, null);
@@ -176,6 +194,15 @@ public class PlanService : IPlanService
 
         await _context.SaveChangesAsync();
 
+        var advanceOptions = await _context.PlanOptions
+            .Where(o => o.PlanId == plan.IdPlan)
+            .Select(o => new PlanOptionResponseDTO
+            {
+                IdPlanOption = o.IdPlanOption,
+                Place = o.Place,
+                Time = o.Time
+            }).ToListAsync();
+
         var response = new PlanResponseDTO
         {
             IdPlan = plan.IdPlan,
@@ -188,7 +215,8 @@ public class PlanService : IPlanService
             State = plan.State.ToString(),
             VotingDeadline = plan.VotingDeadline,
             CheckInStart = plan.CheckInStart,
-            CheckInEnd = plan.CheckInEnd
+            CheckInEnd = plan.CheckInEnd,
+            Options = advanceOptions
         };
 
         return (response, null);

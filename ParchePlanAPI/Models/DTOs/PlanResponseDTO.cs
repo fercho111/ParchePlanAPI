@@ -13,5 +13,6 @@ namespace ParchePlanAPI.Models.DTOs
         public DateTime VotingDeadline { get; set; }
         public DateTime CheckInStart { get; set; }
         public DateTime CheckInEnd { get; set; }
+        public List<PlanOptionResponseDTO> Options { get; set; }
     }
 }
