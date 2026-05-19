@@ -77,6 +77,29 @@ public class PlanController : Controller
         return Ok(plan);
     }
 
+    [HttpGet("{planId}/votes")]
+    public async Task<IActionResult> GetVotes(Guid planId)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (userId == null)
+        {
+            return Unauthorized(new { message = "User not found in token." });
+        }
+
+        var (votes, error) = await _planService.GetVotes(userId, planId);
+
+        if (error != null)
+        {
+            if (error.Contains("not found"))
+                return NotFound(new { message = error });
+
+            return StatusCode(403, new { message = error });
+        }
+
+        return Ok(votes);
+    }
+
     [HttpPost("{planId}/votes")]
     public async Task<IActionResult> CastVote(Guid planId, [FromBody] CastVoteDTO dto)
     {
@@ -103,6 +126,29 @@ public class PlanController : Controller
         }
 
         return Ok(new { message = "Vote registered." });
+    }
+
+    [HttpGet("{planId}/attendances")]
+    public async Task<IActionResult> GetAllAttendances(Guid planId)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (userId == null)
+        {
+            return Unauthorized(new { message = "User not found in token." });
+        }
+
+        var (attendances, error) = await _planService.GetAllAttendances(userId, planId);
+
+        if (error != null)
+        {
+            if (error.Contains("not found"))
+                return NotFound(new { message = error });
+
+            return StatusCode(403, new { message = error });
+        }
+
+        return Ok(attendances);
     }
 
     [HttpPut("{planId}/attendance")]

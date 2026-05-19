@@ -311,6 +311,41 @@ public class PlanService : IPlanService
         return (true, null);
     }
 
+    public async Task<(List<VoteResponseDTO>? Votes, string? Error)> GetVotes(string userId, Guid planId)
+    {
+        var plan = await _context.Plans.FindAsync(planId);
+
+        if (plan == null)
+        {
+            return (null, "Plan not found.");
+        }
+
+        var isMember = await _context.ParcheMembers
+            .AnyAsync(pm => pm.ParcheId == plan.ParcheId && pm.UserId == userId);
+
+        if (!isMember)
+        {
+            return (null, "You are not a member of this parche.");
+        }
+
+        var optionIds = await _context.PlanOptions
+            .Where(o => o.PlanId == planId)
+            .Select(o => o.IdPlanOption)
+            .ToListAsync();
+
+        var votes = await _context.Votes
+            .Where(v => optionIds.Contains(v.OptionId))
+            .Select(v => new VoteResponseDTO
+            {
+                IdVote = v.IdVote,
+                UserId = v.UserId,
+                OptionId = v.OptionId
+            })
+            .ToListAsync();
+
+        return (votes, null);
+    }
+
     public async Task<(bool Success, string? Error)> UpsertAttendance(string userId, Guid planId, UpsertAttendanceDTO dto)
     {
         var plan = await _context.Plans.FindAsync(planId);
@@ -351,6 +386,38 @@ public class PlanService : IPlanService
 
         await _context.SaveChangesAsync();
         return (true, null);
+    }
+
+    public async Task<(List<AttendanceResponseDTO>? Attendances, string? Error)> GetAllAttendances(string userId, Guid planId)
+    {
+        var plan = await _context.Plans.FindAsync(planId);
+
+        if (plan == null)
+        {
+            return (null, "Plan not found.");
+        }
+
+        var isMember = await _context.ParcheMembers
+            .AnyAsync(pm => pm.ParcheId == plan.ParcheId && pm.UserId == userId);
+
+        if (!isMember)
+        {
+            return (null, "You are not a member of this parche.");
+        }
+
+        var attendances = await _context.Attendances
+            .Where(a => a.PlanId == planId)
+            .Select(a => new AttendanceResponseDTO
+            {
+                IdAttendance = a.IdAttendance,
+                PlanId = a.PlanId,
+                UserId = a.UserId,
+                Status = a.Status.ToString(),
+                CheckedIn = a.CheckedIn
+            })
+            .ToListAsync();
+
+        return (attendances, null);
     }
 
     public async Task<(bool Success, string? Error)> CheckIn(string userId, Guid planId)
